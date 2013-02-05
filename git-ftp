@@ -36,6 +36,8 @@ REMOTE_USER=""
 REMOTE_PASSWD=""
 REMOTE_PATH=""
 REMOTE_CACERT=""
+REMOTE_PRIVATEKEY=""
+REMOTE_PUBLICKEY=""
 REMOTE_DELETE_CMD="-DELE "
 REMOTE_CMD_OPTIONS="-s"
 ACTION=""
@@ -643,6 +645,18 @@ handle_remote_protocol_options() {
 		REMOTE_CMD_OPTIONS="$REMOTE_CMD_OPTIONS --cacert $REMOTE_CACERT"
 	fi
 
+    # Check for using private key
+    if [ "$REMOTE_PROTOCOL" = "sftp" ] && \
+    [ -n "$REMOTE_PRIVATEKEY" -a -r "$REMOTE_PRIVATEKEY" ]; then
+        REMOTE_CMD_OPTIONS="$REMOTE_CMD_OPTIONS --key-type PEM --key $REMOTE_PRIVATEKEY"
+    fi
+
+    # Check for using public key
+    if [ "$REMOTE_PROTOCOL" = "sftp" ] && \
+    [ -n "$REMOTE_PUBLICKEY" -a -r "$REMOTE_PUBLICKEY" ]; then
+        REMOTE_CMD_OPTIONS="$REMOTE_CMD_OPTIONS --pubkey $REMOTE_PUBLICKEY"
+    fi
+
 	# Options for curl if using FTPES
 	if [ "$REMOTE_PROTOCOL" = "ftpes" ]; then
 		REMOTE_PROTOCOL="ftp"
@@ -714,7 +728,15 @@ set_remotes() {
 		write_log "Password is set."
 	fi 
 
+    set_sftp_keys
+    if [ -n "$REMOTE_PUBLICKEY" -a -r "$REMOTE_PUBLICKEY" ] && \
+       [ -n "$REMOTE_PRIVATEKEY" -a -r "$REMOTE_PRIVATEKEY" ]; then
+        write_log "Public Key is '$REMOTE_PUBLICKEY'."
+        write_log "Private Key is '$REMOTE_PRIVATEKEY'."
+    fi
+
 	set_remote_protocol
+
 	# Add trailing slash if missing
 	if [ ! -z $REMOTE_PATH ] && ! echo "$REMOTE_PATH" | egrep -q "*/$"; then
 		write_log "Added missing trailing / in path."
@@ -730,8 +752,13 @@ set_remotes() {
 	
 	set_curl_insecure
 	write_log "Insecure is '$CURL_INSECURE'."
+
 }
 
+set_sftp_keys() {
+    [ -z $REMOTE_PUBLICKEY ] && REMOTE_PUBLICKEY="$(get_config publickey)"
+    [ -z $REMOTE_PRIVATEKEY ] && REMOTE_PRIVATEKEY="$(get_config privatekey)"
+}
 set_curl_insecure() {
     [ -z $CURL_INSECURE ] && CURL_INSECURE="$(get_config insecure)"
 }
@@ -821,7 +848,7 @@ action_push() {
 
 action_catchup() {
 	check_is_git_project
-	check_is_dirty_repository
+    check_is_dirty_repository
 	set_remotes
 	set_local_sha1
 	upload_local_sha1
@@ -1089,6 +1116,42 @@ do
 					;;
 			esac
 			;;
+        --privatekey*)
+            case "$#,$1" in
+                *,*=*)
+                    REMOTE_PRIVATEKEY=$(expr "z$1" : 'z-[^=]*=\(.*\)')
+                    ;;
+                1,*)
+                    print error_and_die "Too few arguments for option --privatekey" $ERROR_MISSING_ARGUMENTS
+                    ;;
+                *)
+                    if ! echo "$2" | egrep -q '^-'; then
+                        REMOTE_PRIVATEKEY="$2"
+                        shift
+                    else
+                        print_error_and_die "Too few arguments for option --privatekey" $ERROR_MISSING_ARGUMENTS
+                    fi
+                    ;;
+            esac
+            ;;
+        --publickey*)
+            case "$#,$1" in
+                *,*=*)
+                    REMOTE_PUBLICKEY=$(expr "z$1" : 'z-[^=]*=\(.*\)')
+                    ;;
+                1,*)
+                    print error_and_die "Too few arguments for option --publickey" $ERROR_MISSING_ARGUMENTS
+                    ;;
+                *)
+                    if ! echo "$2" | egrep -q '^-'; then
+                        REMOTE_PUBLICKEY="$2"
+                        shift
+                    else
+                        print_error_and_die "Too few arguments for option --publickey" $ERROR_MISSING_ARGUMENTS
+                    fi
+                    ;;
+            esac
+            ;;
 		-A|--active)
 			ACTIVE_MODE=1
 			write_log "Using active mode."
